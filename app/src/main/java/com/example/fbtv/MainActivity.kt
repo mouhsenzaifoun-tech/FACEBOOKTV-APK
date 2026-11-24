@@ -12,6 +12,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -37,6 +38,7 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var cursor: CursorView
     private val startUrl = "https://m.facebook.com"
+    private var typing = false
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,7 +52,8 @@ class MainActivity : Activity() {
         root.addView(cursor, lp)
         setContentView(root)
 
-        web.isFocusable = false          // we handle the remote ourselves
+        web.isFocusable = true           // needed so the keyboard can open
+        web.isFocusableInTouchMode = true
         with(web.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -84,6 +87,15 @@ class MainActivity : Activity() {
         // Speed up the longer a key is held
         val step = 25f + minOf(e.repeatCount, 20) * 6f
         val edge = 60f
+
+        // While typing in a field, let the keyboard / web page receive the keys
+        if (typing) {
+            if (e.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (down) stopTyping()
+                return true
+            }
+            return super.dispatchKeyEvent(e)
+        }
 
         when (e.keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> { if (down) move(-step, 0f); return true }
@@ -138,6 +150,28 @@ class MainActivity : Activity() {
         web.dispatchTouchEvent(d)
         web.dispatchTouchEvent(u)
         d.recycle(); u.recycle()
+        // After the tap, see if a text box got focus; if so, open the keyboard
+        web.postDelayed({ checkTextField() }, 300)
+    }
+
+    private fun checkTextField() {
+        val js = "(function(){var e=document.activeElement;if(!e)return false;" +
+            "var t=(e.tagName||'').toLowerCase();" +
+            "return t=='input'||t=='textarea'||e.isContentEditable===true;})()"
+        web.evaluateJavascript(js) { r -> if (r == "true") startTyping() }
+    }
+
+    private fun startTyping() {
+        typing = true
+        web.requestFocus()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(web, 0)
+    }
+
+    private fun stopTyping() {
+        typing = false
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(web.windowToken, 0)
     }
 
     override fun onResume() { super.onResume(); web.onResume() }
